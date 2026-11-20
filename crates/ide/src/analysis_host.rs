@@ -97,6 +97,51 @@ mod tests {
     }
 
     #[test]
+    fn indexes_are_shared_within_a_snapshot_revision_and_rebuilt_after_edits() {
+        let mut host = AnalysisHost::default();
+        host.apply_change(change_with_file_text("module old; wire a; assign a = 1; endmodule"));
+
+        let file_id = FileId::from_raw(0);
+        let before = host.make_analysis();
+        let same_revision = host.make_analysis();
+        let root = before.db.source_root_id(file_id);
+        let modules = before.db.source_root_module_index(root);
+        let semantics = before.db.file_semantic_index(file_id);
+        assert!(Arc::ptr_eq(&modules, &same_revision.db.source_root_module_index(root)));
+        assert!(Arc::ptr_eq(&semantics, &same_revision.db.file_semantic_index(file_id)));
+        assert_eq!(modules.module_definitions(&"old".into()).len(), 1);
+        drop((before, same_revision));
+
+        host.apply_change(modify_with_file_text("module updated; wire b; assign b = 1; endmodule"));
+        let after = host.make_analysis();
+        let updated_modules = after.db.source_root_module_index(root);
+        let updated_semantics = after.db.file_semantic_index(file_id);
+        assert!(updated_modules.module_definitions(&"old".into()).is_empty());
+        assert_eq!(updated_modules.module_definitions(&"updated".into()).len(), 1);
+        assert!(!Arc::ptr_eq(&semantics, &updated_semantics));
+        assert_ne!(semantics, updated_semantics);
+    }
+
+    #[test]
+    fn direct_database_input_writes_invalidate_indexes() {
+        let mut db = RootDb::new(None);
+        change_with_file_text("module old; endmodule").apply(&mut db);
+        let file_id = FileId::from_raw(0);
+        let root = db.source_root_id(file_id);
+        let before = db.source_root_module_index(root);
+        assert_eq!(before.module_definitions(&"old".into()).len(), 1);
+
+        db.set_file_text_with_durability(
+            file_id,
+            Arc::from("module updated; endmodule"),
+            Durability::LOW,
+        );
+        let after = db.source_root_module_index(root);
+        assert!(after.module_definitions(&"old".into()).is_empty());
+        assert_eq!(after.module_definitions(&"updated".into()).len(), 1);
+    }
+
+    #[test]
     fn concurrent_snapshot_drop_unblocks_input_invalidation() {
         let mut host = AnalysisHost::default();
         host.apply_change(change_with_file_text("module old;\nendmodule\n"));

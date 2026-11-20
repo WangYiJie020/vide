@@ -23,6 +23,23 @@ Vide is a fully open-source modern SystemVerilog coding IDE developed by [the PA
 
 If you run into problems or want to contribute, please use GitHub Issues and Pull Requests.
 
+## Reference index caching
+
+This branch is based on `v1.3.0`. It caches the module index for each source root
+and the semantic index for each file on first use. Read-only requests in the same
+analysis revision share those indexes. An applied change invalidates the entire
+cache, since references can depend on other files, includes, and project
+settings. The next indexed lookup after a change drops the prior revision's
+indexes and rebuilds what it needs. No environment variable is needed.
+
+To build the standalone server without replacing an installed copy:
+
+```sh
+git submodule update --init --recursive
+cargo build --release --bin vide
+./target/release/vide --version
+```
+
 ## License and Acknowledgements
 
 Vide is licensed under the [MIT License](LICENSE).

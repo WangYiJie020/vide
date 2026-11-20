@@ -12,12 +12,17 @@ use preproc_expand::db::PreprocDb;
 use triomphe::Arc;
 use vfs::{AnchoredPath, FileId};
 
-use crate::db::{line_index_db::LineIndexDb, workspace_symbol_index_db::WorkspaceSymbolIndexDb};
+use crate::db::{
+    line_index_db::LineIndexDb,
+    workspace_symbol_index_db::{IndexCache, WorkspaceSymbolIndexDb},
+};
 
 #[salsa::db]
 #[derive(Clone)]
 pub struct RootDb {
     storage: salsa::Storage<Self>,
+    // Like Salsa storage, this cache is shared across database clones.
+    index_cache: Arc<IndexCache>,
 }
 
 #[salsa::db]
@@ -42,7 +47,11 @@ impl TyDb for RootDb {}
 impl LineIndexDb for RootDb {}
 
 #[salsa::db]
-impl WorkspaceSymbolIndexDb for RootDb {}
+impl WorkspaceSymbolIndexDb for RootDb {
+    fn index_cache(&self) -> &IndexCache {
+        &self.index_cache
+    }
+}
 
 impl fmt::Debug for RootDb {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -60,7 +69,7 @@ impl FileLoader for RootDb {
 
 impl RootDb {
     pub fn new(lru_capacity: Option<usize>) -> RootDb {
-        let mut db = RootDb { storage: salsa::Storage::default() };
+        let mut db = RootDb { storage: salsa::Storage::default(), index_cache: Default::default() };
         db.set_files_with_durability(Default::default(), Durability::HIGH);
         db.set_diagnostics_config_with_durability(
             Arc::new(DiagnosticsConfig::default()),
